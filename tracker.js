@@ -10,7 +10,20 @@ module.exports.getPeers = (torrent,callback) =>{
     //send connection request
 
     udpSend(socket,buildConnReq(),url);
-    
+    socket.on('message',response=>{
+        if(respType(response) === 'connect'){
+          //receive and parse connect response
+          const connResp = parseConnResp(response);
+          //send announce request
+          const announceReq = buildAnnounceReq(connResp.connectionId);
+          udpSend(socket, announceReq, url);
+        }else if(respType(response) === 'announce'){
+          //parse announce response
+          const announceResp = parseAnnounceResp(response);
+          //pass peers to callback
+          callback(announceResp.peers);
+        }
+    })
 }
 
 
