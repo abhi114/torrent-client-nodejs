@@ -1,0 +1,72 @@
+Let's break down how the group function works with an example.
+
+group Function
+Here's the group function again:
+
+javascript
+
+function group(iterable, groupSize) {
+  let groups = [];
+  for (let i = 0; i < iterable.length; i += groupSize) {
+    groups.push(iterable.slice(i, i + groupSize));
+  }
+  return groups;
+}
+Explanation
+iterable: This is the input array or buffer that you want to divide into smaller groups.
+groupSize: The size of each group.
+The function iterates through the iterable, creating slices of length groupSize and adding them to the groups array.
+
+Example
+Let's say we have the following buffer (array of 12 bytes) that represents 2 peers, where each peer's data takes 6 bytes:
+
+javascript
+
+const buffer = [
+  0xC0, 0xA8, 0x00, 0x01, 0x00, 0x50, // Peer 1: IP (192.168.0.1), Port (80)
+  0xC0, 0xA8, 0x00, 0x02, 0x01, 0xBB  // Peer 2: IP (192.168.0.2), Port (443)
+];
+In this case, iterable = buffer and groupSize = 6.
+
+Step-by-Step Execution:
+Initially, groups = [].
+The first iteration:
+i = 0
+iterable.slice(0, 6) returns the first 6 bytes: [0xC0, 0xA8, 0x00, 0x01, 0x00, 0x50]
+This represents the first peer.
+Add it to groups:
+groups = [[0xC0, 0xA8, 0x00, 0x01, 0x00, 0x50]]
+The second iteration:
+i = 6
+iterable.slice(6, 12) returns the next 6 bytes: [0xC0, 0xA8, 0x00, 0x02, 0x01, 0xBB]
+This represents the second peer.
+Add it to groups:
+groups = [[0xC0, 0xA8, 0x00, 0x01, 0x00, 0x50], [0xC0, 0xA8, 0x00, 0x02, 0x01, 0xBB]]
+Final Result:
+javascript
+Copy code
+[
+  [0xC0, 0xA8, 0x00, 0x01, 0x00, 0x50], // Peer 1
+  [0xC0, 0xA8, 0x00, 0x02, 0x01, 0xBB]  // Peer 2
+]
+How It Works with map
+Now that the peers are grouped into arrays of 6 bytes each, the map function processes each group to convert it into an object with the ip and port:
+
+For the first peer:
+
+address.slice(0, 4) gives [0xC0, 0xA8, 0x00, 0x01] → '192.168.0.1'
+address.readUInt16BE(4) reads the next two bytes [0x00, 0x50] → 80
+Result: { ip: '192.168.0.1', port: 80 }
+For the second peer:
+
+address.slice(0, 4) gives [0xC0, 0xA8, 0x00, 0x02] → '192.168.0.2'
+address.readUInt16BE(4) reads the next two bytes [0x01, 0xBB] → 443
+Result: { ip: '192.168.0.2', port: 443 }
+So after mapping, you get:
+
+
+
+[
+  { ip: '192.168.0.1', port: 80 },
+  { ip: '192.168.0.2', port: 443 }
+]
