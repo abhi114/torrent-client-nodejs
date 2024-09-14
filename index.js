@@ -15,6 +15,10 @@
 //http://example.com:6969/announce, which the BitTorrent client would use to connect to the tracker and participate in the torrent's distribution.
 const fs = require('fs');
 const bencode = require("bencode");
+const tracker = require('./tracker');
 const torrent = bencode.decode(fs.readFileSync("puppy.torrent"));
-console.log(torrent.announce.toString("utf8"));
+tracker.getPeers(torrent,peers=>{
+    console.log("list of peers:",peers);
+})
+
 

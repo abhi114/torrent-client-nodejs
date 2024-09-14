@@ -7,3 +7,17 @@ the other user will recieve that data in its entirety, uncorrupted, and in the c
 
 For these reasons, udp is often a good choice for trackers because they send small messages, 
 and we use tcp for when we actually transfer files between peers because those files tend to be larger and must arrive intact.
+
+The BEP describes the connect request as follows:
+
+Offset  Size            Name            Value
+0       64-bit integer  connection_id   0x41727101980
+8       32-bit integer  action          0 // connect
+12      32-bit integer  transaction_id  ? // random
+16
+
+This tells us that our message should start out with a 64-bit (i.e. 8 bytes) 
+integer at index 0, and that the value should be 0x41727101980. Since we just write 8 bytes, 
+the index of the next part is 8. Now we write 32-bit integer (4 bytes) with the value 0. This moves us up to an offset of 12 bytes, 
+and we write a random 32-bit integer. So the total message length is 8 bytes + 4 bytes + 4bytes = 16 bytes long, and should look something 
+like this:
