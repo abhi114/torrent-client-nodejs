@@ -13,13 +13,20 @@
 
 //For example, the announce property might contain a URL like 
 //http://example.com:6969/announce, which the BitTorrent client would use to connect to the tracker and participate in the torrent's distribution.
+
+const download = require("./src/download");
 const fs = require('fs');
 const bencode = require("bencode");
 const tracker = require('./tracker');
 const torrentParser = require('./torrent-parser');
-const torrent = torrentParser.open('puppy.torrent');
+const torrent = torrentParser.open(process.argv[2]); //now the file path can be passed using the arguments in cmd line
+//console.log(torrent);
+download(torrent);
 tracker.getPeers(torrent,peers=>{
+    if(peers){
     console.log("list of peers:",peers);
+    }
+    
 })
 
 

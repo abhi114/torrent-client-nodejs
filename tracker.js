@@ -1,47 +1,94 @@
 'user strict';
 
 const dgram = require('dgram');
-const Buffer = require('buffer');
+const Buffer = require('buffer').Buffer;
 const urlParse = require('url').parse;
 const crypto = require('crypto'); //for creating a random buffer for the transaction_id
 const torrentParser = require('./torrent-parser');
 const util = require('./util');
 
-module.exports.getPeers = (torrent,callback) =>{
-    const socket = dgram.createSocket('udp4');
-    const url = torrent.announce.toString('utf8');
-    //send connection request
+const getPeers = async (torrent, callback) => {
+  if (torrent["announce-list"]) {
+    const trackerUrls = torrent["announce-list"];
+    let foundPeers = false; // Flag to exit the loop when peers are found
 
-    udpSend(socket,buildConnReq(),url);
-    socket.on('message',response=>{
-        if(respType(response) === 'connect'){
-          //receive and parse connect response
-          const connResp = parseConnResp(response);
-          //send announce request
-          const announceReq = buildAnnounceReq(connResp.connectionId,torrent);
-          udpSend(socket, announceReq, url);
-        }else if(respType(response) === 'announce'){
-          //parse announce response
-          const announceResp = parseAnnounceResp(response);
-          //pass peers to callback
-          callback(announceResp.peers);
-        }
-    })
-}
+    for (let trackerUrl of trackerUrls) {
+      if (foundPeers) break; // Exit loop if peers have been found
+
+      const isSuccessful = await new Promise((resolve) => {
+        const socket = dgram.createSocket("udp4");
+        const tracker = trackerUrl[0].toString("utf8");
+        const url = urlParse(tracker);
+
+        udpSend(socket, buildConnReq(), url);
+
+        socket.on("message", (response) => {
+          if (respType(response) === "connect") {
+            console.log("connected");
+            const connResp = parseConnResp(response);
+            const announceReq = buildAnnounceReq(
+              connResp.connectionId,
+              torrent
+            );
+            udpSend(socket, announceReq, url);
+          } else if (respType(response) === "announce") {
+            const announceResp = parseAnnounceResp(response);
+
+            if (announceResp && announceResp.peers.length > 0) {
+              callback(announceResp.peers);
+              foundPeers = true; // Set flag to stop further attempts
+              resolve(true); // Successfully retrieved peers
+            } else {
+              console.log(`No valid peers from tracker ${trackerUrl}`);
+              resolve(false); // No valid peers, continue to next tracker
+            }
+          }
+        });
+
+        socket.on("error", (error) => {
+          console.error(
+            `Failed to connect to tracker ${trackerUrl}: ${error.message}`
+          );
+          resolve(false);
+        });
+
+        // Timeout for waiting on tracker response
+        setTimeout(() => {
+          console.log(
+            `No response from tracker ${trackerUrl}, moving to the next tracker.`
+          );
+          resolve(false);
+        }, 5000); // 5 seconds timeout
+      });
+
+      if (isSuccessful) {
+        break; // Break out of loop once peers are found
+      }
+    }
+  }
+};
 
 
-function udpSend(socket,message,rawUrl,callback=()=>{}){
+
+
+
+function udpSend(socket,message,rawUrl,callback=()=>{console.log("done")}){
     const url = urlParse(rawUrl);
-    socket.send(message,0,message.length,url.port,url.host,callback);
+    console.log("url is " + JSON.stringify(url));
+    socket.send(message,0,message.length,url.port,url.hostname,callback);
 }
 
-function respType(){
+function respType(resp){
   //respType will check if the response was for the connect or the announce request. 
   //Since both responses come through the same socket, we want a way to distinguish them.
+  console.log('response is' +JSON.stringify(resp));
+  const action = resp.readUInt32BE(0);
+  if(action === 0) return 'connect';
+  if(action === 1) return 'announce';
 }
 function buildConnReq(){
   //we create a new empty buffer with a size of 16 bytes since we already know that the entire message should be 16 bytes long.
-  const buf = Buffer.alloc(16);
+  const buf = Buffer.allocUnsafe(16);
   //for the connection id
   //The 0x indicates that the number is a hexadecimal number, which can be a more conventient representation when working with bytes.
   //Otherwise they’re basically the same as base 10 numbers.
@@ -96,27 +143,44 @@ function buildAnnounceReq(connId,torrent,port=6881){
 
 }
 //read the announcerespParseExplanation for this context
-function parseAnnounceResp(resp){
-  function group(iterable,groupSize){
-    let groups = [];
-    for(let i =0;i<iterable.length;i=i+groupSize){
-      groups.push(iterable.slice(i,i+groupSize));
-    }
-    return groups;
-  }
-  return {
-    //action
-    action:resp.readUInt32BE(0),
-    transactionId:resp.readUInt32BE(4),
-    interval:resp.readUInt32BE(8),
-    leechers:resp.readUInt32BE(12),
-    seeders:resp.readUInt32BE(16),
-    peers:group(resp.slice(20),6).map(address=>{
-      return {
-        ip:address.slice(0,4).join('.'),
-        port:address.readUInt32BE(4)
-      }
-    })
-  }
+function parseAnnounceResp(resp) {
+  console.log("announce final response is", JSON.stringify(resp));
 
+  if (resp.length < 20) {
+    console.log("Incomplete response received, skipping parsing for peers.");
+    return null; // Return null to indicate an invalid response
+  }
+   function group(iterable, groupSize) {
+     let groups = [];
+     for (let i = 0; i < iterable.length; i += groupSize) {
+       groups.push(iterable.slice(i, i + groupSize));
+     }
+     return groups;
+   }
+  try {
+    const action = resp.readUInt32BE(0);
+    const transactionId = resp.readUInt32BE(4);
+    const interval = resp.readUInt32BE(8);
+    const leechers = resp.readUInt32BE(12);
+    const seeders = resp.readUInt32BE(16);
+
+    const peersData = resp.slice(20);
+    const peers = group(peersData, 6).map((address) => ({
+      ip: `${address[0]}.${address[1]}.${address[2]}.${address[3]}`,
+      port: address.readUInt16BE(4),
+    }));
+
+    return {
+      action,
+      transactionId,
+      interval,
+      leechers,
+      seeders,
+      peers,
+    };
+  } catch (err) {
+    console.error("Error parsing announce response:", err);
+    return null; // Handle errors by returning null
+  }
 }
+module.exports.getPeers = getPeers;
